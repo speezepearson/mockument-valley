@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Isometric View with Three.js</title>
+    <style>
+        body { margin: 0; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+
+const GRID_CELL_SIZE = 10;
+
+function gridPosnToVec(ijk) {
+    const [i, j, k] = ijk;
+    return new THREE.Vector3(i * GRID_CELL_SIZE, j * GRID_CELL_SIZE, k * GRID_CELL_SIZE);
+}
+function vecToGridPosn(vec) {
+    return [
+        Math.round(vec.x / GRID_CELL_SIZE), 
+        Math.round(vec.y / GRID_CELL_SIZE), 
+        Math.round(vec.z / GRID_CELL_SIZE),
+    ];
+}
+
+function init() {
+    // Scene
+    var scene = new THREE.Scene();
+
+    // Camera
+    var aspectRatio = window.innerWidth / window.innerHeight;
+    var d = 100;
+    var camera = new THREE.OrthographicCamera(-d * aspectRatio, d * aspectRatio, d, -d, 1, 1000);
+    camera.position.set(200, 200, 200); // Set position for isometric view
+    camera.lookAt(scene.position); // Look at the center of the scene
+
+    function projectGridPosn(ijk) {
+        const [i, j, k] = ijk;
+        var i2d, j2d;
+        // use the camera position to determine which plane to project onto
+        if (camera.position.x < 0 && camera.position.z < 0) {
+            // console.log('a')
+            return [i + j, k + j];
+        } else if (camera.position.x < 0 && camera.position.z > 0) {
+            // console.log('b')
+            return [i + j, k - j];
+        } else if (camera.position.x > 0 && camera.position.z < 0) {
+            // console.log('c')
+            return [i - j, k + j];
+        } else if (camera.position.x > 0 && camera.position.z > 0) {
+            // console.log('d')
+            return [i - j, k - j];
+        }
+    }
+
+    // Renderer
+    var renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Add a cube
+    var geometry = new THREE.BoxGeometry(GRID_CELL_SIZE*.8, GRID_CELL_SIZE*.8, GRID_CELL_SIZE*.8);
+    var material = new THREE.MeshLambertMaterial({ color: 0xff0000 });
+    var cube = new THREE.Mesh(geometry, material);
+    scene.add(cube);
+
+    var cubeGridPosn = [0, 0, 0];
+    function setCubeGridPosn(ijk) {
+        const [i, j, k] = ijk;
+        cubeGridPosn = [i, j, k];
+        cube.position.set(i * GRID_CELL_SIZE, j * GRID_CELL_SIZE, k * GRID_CELL_SIZE);
+    }
+
+    // Create edges for the cube
+    var edgeGeometry = new THREE.EdgesGeometry(cube.geometry);
+    var edgeMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 });
+    var cubeEdges = new THREE.LineSegments(edgeGeometry, edgeMaterial);
+    cube.add(cubeEdges); // Add edges to the cube
+
+    var groundCells = [
+        [0,0,0],
+        [1,0,0],
+        [1,0,1],
+        [1,0,2],
+        [5,4,-1],
+    ]
+    var goalCell = groundCells[groundCells.length - 1];
+    var ground = new THREE.Group();
+    ground.position.set(0, -5, 0);
+    var squareGeometry = new THREE.PlaneGeometry(GRID_CELL_SIZE, GRID_CELL_SIZE).rotateX(-Math.PI / 2);
+    var squareMaterial = new THREE.MeshLambertMaterial({ color: 0x888888 });
+    var goalMaterial = new THREE.MeshLambertMaterial({ color: 0x00ff00 });
+    groundCells.forEach(function(cell) {
+        var square = new THREE.Mesh(squareGeometry, (cell[0] == goalCell[0] && cell[1] == goalCell[1] && cell[2] == goalCell[2]) ? goalMaterial : squareMaterial);
+        square.position.set(cell[0] * GRID_CELL_SIZE, cell[1] * GRID_CELL_SIZE, cell[2] * GRID_CELL_SIZE);
+        ground.add(square);
+        var edges = new THREE.EdgesGeometry(square.geometry);
+        var line = new THREE.LineSegments(edges, edgeMaterial);
+        square.add(line);
+    });
+    scene.add(ground);
+
+    // Add light
+    var light = new THREE.AmbientLight(0xffffff); // soft white light
+    scene.add(light);
+
+    // add WASD labels
+    {
+        [
+            ['W', 0, -10],
+            ['S', 0, 10],
+            ['A', -10, 0],
+            ['D', 10, 0],
+        ].forEach(([text, x, z]) => {
+            [true, false].forEach((flip) => {
+                var canvas = document.createElement('canvas');
+                canvas.width = 30;
+                canvas.height = 30;
+                var ctx = canvas.getContext('2d');
+                ctx.font = '20px Arial';
+                ctx.fillStyle = 'red';
+                ctx.fillText(text, 0, 20);
+                var texture = new THREE.Texture(canvas);
+                texture.needsUpdate = true;
+                var material = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
+                var mesh = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), material);
+                mesh.position.set(x*GRID_CELL_SIZE, 0, z*GRID_CELL_SIZE);
+                mesh.rotation.y = flip ? Math.PI : 0;
+                scene.add(mesh);
+            })
+
+        })
+
+        // var canvas = document.createElement('canvas');
+        // canvas.width = 30;
+        // canvas.height = 30;
+        // var ctx = canvas.getContext('2d');
+        // ctx.font = '20px Arial';
+        // ctx.fillStyle = 'red';
+        // ctx.fillText('S', 0, 20);
+        // var texture = new THREE.Texture(canvas);
+        // texture.needsUpdate = true;
+        // var material = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
+        // var mesh = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), material);
+        // mesh.position.set(0, 0, 10*GRID_CELL_SIZE);
+        // scene.add(mesh);
+        
+        // var canvas = document.createElement('canvas');
+        // canvas.width = 30;
+        // canvas.height = 30;
+        // var ctx = canvas.getContext('2d');
+        // ctx.font = '20px Arial';
+        // ctx.fillStyle = 'red';
+        // ctx.fillText('A', 0, 20);
+        // var texture = new THREE.Texture(canvas);
+        // texture.needsUpdate = true;
+        // var material = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
+        // var mesh = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), material);
+        // mesh.position.set(-10*GRID_CELL_SIZE, 0, 0);
+        // scene.add(mesh);
+        
+        // var canvas = document.createElement('canvas');
+        // canvas.width = 30;
+        // canvas.height = 30;
+        // var ctx = canvas.getContext('2d');
+        // ctx.font = '20px Arial';
+        // ctx.fillStyle = 'red';
+        // ctx.fillText('D', 0, 20);
+        // var texture = new THREE.Texture(canvas);
+        // texture.needsUpdate = true;
+        // var material = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
+        // var mesh = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), material);
+        // mesh.position.set(10*GRID_CELL_SIZE, 0, 0);
+        // scene.add(mesh);
+
+        // // and flip those so they appear even when you're looking at them from "behind"
+        // var canvas = document.createElement('canvas');
+        // canvas.width = 30;
+        // canvas.height = 30;
+        // var ctx = canvas.getContext('2d');
+        // ctx.font = '20px Arial';
+        // ctx.fillStyle = 'red';
+        // ctx.fillText('W', 0, 20);
+        // var texture = new THREE.Texture(canvas);
+        // texture.needsUpdate = true;
+        // var material = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
+        // var mesh = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), material);
+        // mesh.position.set(0, 0, -10*GRID_CELL_SIZE);
+        // mesh.rotation.y = Math.PI;
+        // scene.add(mesh);
+
+        // var canvas = document.createElement('canvas');
+        // canvas.width = 30;
+        // canvas.height = 30;
+        // var ctx = canvas.getContext('2d');
+        // ctx.font = '20px Arial';
+        // ctx.fillStyle = 'red';
+        // ctx.fillText('S', 0, 20);
+        // var texture = new THREE.Texture(canvas);
+        // texture.needsUpdate = true;
+        // var material = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
+        // var mesh = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), material);
+        // mesh.position.set(0, 0, 10*GRID_CELL_SIZE);
+        // mesh.rotation.y = Math.PI;
+        // scene.add(mesh);
+
+        // var canvas = document.createElement('canvas');
+        // canvas.width = 30;
+        // canvas.height = 30;
+        // var ctx = canvas.getContext('2d');
+        // ctx.font = '20px Arial';
+        // ctx.fillStyle = 'red';
+        // ctx.fillText('A', 0, 20);
+        // var texture = new THREE.Texture(canvas);
+        // texture.needsUpdate = true;
+        // var material = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
+        // var mesh = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), material);
+        // mesh.position.set(-10*GRID_CELL_SIZE, 0, 0);
+        // mesh.rotation.y = Math.PI;
+        // scene.add(mesh);
+
+        // var canvas = document.createElement('canvas');
+        // canvas.width = 30;
+        // canvas.height = 30;
+        // var ctx = canvas.getContext('2d');
+        // ctx.font = '20px Arial';
+        // ctx.fillStyle = 'red';
+        // ctx.fillText('D', 0, 20);
+        // var texture = new THREE.Texture(canvas);
+        // texture.needsUpdate = true;
+        // var material = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
+        // var mesh = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), material);
+        // mesh.position.set(10*GRID_CELL_SIZE, 0, 0);
+        // mesh.rotation.y = Math.PI;
+        // scene.add(mesh);
+    }
+
+    var cameraMoveData = null; // or {startPosition, axis, progress}
+
+    function panCamera() {
+        if (!cameraMoveData) return;
+        cameraMoveData.progress += 0.03;
+        if (cameraMoveData.progress >= 1) {
+            cameraMoveData = null;
+            return;
+        }
+
+        var cur = cameraMoveData.startPosition.clone().applyAxisAngle(cameraMoveData.axis, Math.PI / 2 * easeInOutCubic(cameraMoveData.progress));
+        camera.position.set(cur.x, cur.y, cur.z)
+        camera.lookAt(scene.position);
+    }
+
+    function easeInOutCubic(t) {
+        return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    }
+
+    function panCameraHandler(event) {
+        switch (event.key) {
+        case 'ArrowLeft':
+            if (cameraMoveData) return;
+            cameraMoveData = {
+                startPosition: camera.position.clone(),
+                axis: new THREE.Vector3(0, -1, 0),
+                progress: 0
+            };
+            break;
+        case 'ArrowRight':
+            if (cameraMoveData) return;
+            cameraMoveData = {
+                startPosition: camera.position.clone(),
+                axis: new THREE.Vector3(0, 1, 0),
+                progress: 0
+            };
+            break;
+        
+        // wasd
+        case 'a':
+            
+            break;
+        }
+    }
+
+    function topmostGroundCellAt(ij2d) {
+        console.log('aiming at', ij2d)
+        var topmost = null;
+        groundCells.forEach(function(cell) {
+            var cell2d = projectGridPosn(cell);
+            console.log('  ', cell, '->', cell2d)
+            if (cell2d[0] == ij2d[0] && cell2d[1] == ij2d[1]) {
+                if (!topmost || cell[1] > topmost[1]) topmost = cell;
+            }
+        });
+        return topmost;
+    }
+
+    var movingData = null; // or {direction, dstGridPosn, progress}
+    function moveCubeHandler(event) {
+        switch (event.key) {
+            case 'w':
+            case 'W':
+                if (movingData) return;
+                console.log('starting at', cubeGridPosn, 'i.e.', projectGridPosn(cubeGridPosn));
+                var direction = new THREE.Vector3(0, 0, -1);
+                var dstGridPosn = topmostGroundCellAt(projectGridPosn([cubeGridPosn[0] + direction.x, cubeGridPosn[1] + direction.y, cubeGridPosn[2] + direction.z]));
+                movingData = {
+                    direction,
+                    dstGridPosn,
+                    progress: 0,
+                };
+                break;
+            case 'a':
+            case 'A':
+                if (movingData) return;
+                console.log('starting at', cubeGridPosn, 'i.e.', projectGridPosn(cubeGridPosn));
+                var direction = new THREE.Vector3(-1, 0, 0);
+                var dstGridPosn = topmostGroundCellAt(projectGridPosn([cubeGridPosn[0] + direction.x, cubeGridPosn[1] + direction.y, cubeGridPosn[2] + direction.z]));
+                movingData = {
+                    direction,
+                    dstGridPosn,
+                    progress: 0,
+                };
+                break;
+            case 's':
+            case 'S':
+                if (movingData) return;
+                console.log('starting at', cubeGridPosn, 'i.e.', projectGridPosn(cubeGridPosn));
+                var direction = new THREE.Vector3(0, 0, 1);
+                console.log('a', [cubeGridPosn[0] + direction.x, cubeGridPosn[1] + direction.y, cubeGridPosn[2] + direction.z]);
+                console.log('b', projectGridPosn([cubeGridPosn[0] + direction.x, cubeGridPosn[1] + direction.y, cubeGridPosn[2] + direction.z]));
+                var dstGridPosn = topmostGroundCellAt(projectGridPosn([cubeGridPosn[0] + direction.x, cubeGridPosn[1] + direction.y, cubeGridPosn[2] + direction.z]));
+                movingData = {
+                    direction,
+                    dstGridPosn,
+                    progress: 0,
+                };
+                break;
+            case 'd':
+            case 'D':
+                if (movingData) return;
+                console.log('starting at', cubeGridPosn, 'i.e.', projectGridPosn(cubeGridPosn));
+                var direction = new THREE.Vector3(1, 0, 0);
+                var dstGridPosn = topmostGroundCellAt(projectGridPosn([cubeGridPosn[0] + direction.x, cubeGridPosn[1] + direction.y, cubeGridPosn[2] + direction.z]));
+                movingData = {
+                    direction,
+                    dstGridPosn,
+                    progress: 0,
+                };
+                break;
+        }
+    }
+
+    function moveCube() {
+        if (!movingData)return;
+        if (movingData.progress >= 1) {
+            if (movingData.dstGridPosn) setCubeGridPosn(movingData.dstGridPosn);
+            movingData = null;
+            return;
+        }
+        movingData.progress += 0.03;
+        if (movingData.progress > 1) movingData.progress = 1;
+        var progress = movingData.progress;
+        if (movingData.dstGridPosn === null && progress > 0.5) progress = 1 - progress;
+        var cur = gridPosnToVec(cubeGridPosn).add(movingData.direction.clone().multiplyScalar(GRID_CELL_SIZE * easeInOutCubic(progress)));
+        cube.position.set(cur.x, cur.y, cur.z);
+    }
+
+    document.addEventListener('keydown', panCameraHandler, false);
+    document.addEventListener('keydown', moveCubeHandler, false);
+
+
+
+
+    // Render function
+    function render() {
+        requestAnimationFrame(render);
+        panCamera();
+        moveCube();
+        renderer.render(scene, camera);
+    }
+    
+    render();
+}
+
+init();
+
+
+    </script>
+</body>
+</html>
